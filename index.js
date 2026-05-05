@@ -1,66 +1,48 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+
+       
+        const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const qrcode = require('qrcode-terminal');
+const pino = require('pino');
 
 async function startBot() {
-    // Setup authentication (session)
-    const { state, saveCreds } = await useMultiFileAuthState('session_data');
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info');
+    const { version } = await fetchLatestBaileysVersion();
 
     const sock = makeWASocket({
+        version,
         auth: state,
-        printQRInTerminal: true, // This shows the QR code in Render's logs
-        logger: require('pino')({ level: 'silent' })
+        logger: pino({ level: 'silent' }),
+        printQRInTerminal: false // We will handle it manually below
     });
 
-    sock.ev.on('creds.update', saveCreds);
-
-    // Connection Logic
+    // THIS PART GENERATES THE QR CODE MANUALLY
     sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
+        const { connection, lastDisconnect, qr } = update;
+        
+        if (qr) {
+            console.log('--- SCAN THE QR CODE BELOW ---');
+            qrcode.generate(qr, { small: true });
+        }
+
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) startBot();
         } else if (connection === 'open') {
-            console.log('✅ Bot is online and connected!');
+            console.log('✅ Bot connected successfully!');
         }
     });
 
-    // Command Logic
+    sock.ev.on('creds.update', saveCreds);
+
     sock.ev.on('messages.upsert', async ({ messages }) => {
         const msg = messages[0];
         if (!msg.message || msg.key.fromMe) return;
-
         const from = msg.key.remoteJid;
-        const text = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
-        const command = text.toLowerCase();
+        const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").toLowerCase();
 
-        // 1. MENU COMMAND
-        if (command === '.menu' || command === '.help') {
-            const fullMenu = `
-╔═══════════════════╗
-🌐 *GENERAL COMMANDS*
-║ ➤ .ping
-║ ➤ .alive
-║ ➤ .owner
-╚═══════════════════╝ 
-(Your other menu categories will go here...)`;
-            await sock.sendMessage(from, { text: fullMenu });
-        }
-
-        // 2. PING COMMAND
-        if (command === '.ping') {
-            await sock.sendMessage(from, { text: 'Speed: *0.45ms* ⚡' });
-        }
-
-        // 3. ALIVE COMMAND
-        if (command === '.alive') {
-            await sock.sendMessage(from, { text: 'I am online and ready to help! 🤖' });
-        }
-
-        // 4. OWNER COMMAND
-        if (command === '.owner') {
-            await sock.sendMessage(from, { text: 'Bot Owner: *[Your Name/Number]*' });
-        }
+        if (text === '.ping') await sock.sendMessage(from, { text: 'Pong! ⚡' });
+        if (text === '.menu') await sock.sendMessage(from, { text: '*Main Menu*\n\n.ping\n.alive' });
     });
 }
 
