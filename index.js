@@ -1,8 +1,5 @@
-
-       
-        const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
-const qrcode = require('qrcode-terminal');
 const pino = require('pino');
 
 async function startBot() {
@@ -13,23 +10,27 @@ async function startBot() {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        printQRInTerminal: false // We will handle it manually below
+        printQRInTerminal: false, // QR code disable kar diya gaya hy
+        browser: Browsers.macOS("Chrome") // Pairing code ke liye browser config zarori hy
     });
 
-    // THIS PART GENERATES THE QR CODE MANUALLY
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        
-        if (qr) {
-            console.log('--- SCAN THE QR CODE BELOW ---');
-            qrcode.generate(qr, { small: true });
-        }
+    // PAIRING CODE LOGIC
+    if (!sock.authState.creds.registered) {
+        const phoneNumber = "923XXXXXXXXX"; // Apna phone number yahan likhen (Country code ke sath, bina + ke)
+        setTimeout(async () => {
+            const code = await sock.requestPairingCode(phoneNumber);
+            console.log(`\n✅ APKA PAIRING CODE YAHAN HY: ${code}\n`);
+            console.log("Is code ko apne WhatsApp -> Linked Devices -> Link with phone number par ja ker enter karain.");
+        }, 3000);
+    }
 
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect } = update;
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) startBot();
         } else if (connection === 'open') {
-            console.log('✅ Bot connected successfully!');
+            console.log('✅ Bot successfully link ho gaya hy!');
         }
     });
 
@@ -47,3 +48,4 @@ async function startBot() {
 }
 
 startBot();
+
