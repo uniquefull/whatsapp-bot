@@ -10,27 +10,26 @@ async function startBot() {
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
-        printQRInTerminal: false, // QR code disable kar diya gaya hy
-        browser: Browsers.macOS("Chrome") // Pairing code ke liye browser config zarori hy
+        printQRInTerminal: false,
+        browser: Browsers.macOS("Chrome")
     });
 
-    // PAIRING CODE LOGIC
-    if (!sock.authState.creds.registered) {
-        const phoneNumber = "923XXXXXXXXX"; // Apna phone number yahan likhen (Country code ke sath, bina + ke)
-        setTimeout(async () => {
-            const code = await sock.requestPairingCode(phoneNumber);
-            console.log(`\n✅ APKA PAIRING CODE YAHAN HY: ${code}\n`);
-            console.log("Is code ko apne WhatsApp -> Linked Devices -> Link with phone number par ja ker enter karain.");
-        }, 3000);
-    }
-
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect, qr } = update;
+        
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) startBot();
         } else if (connection === 'open') {
             console.log('✅ Bot successfully link ho gaya hy!');
+        }
+
+        if (!sock.authState.creds.registered && connection === 'connecting') {
+            const phoneNumber = "923XXXXXXXXX"; // <-- Double check this number format
+            setTimeout(async () => {
+                let code = await sock.requestPairingCode(phoneNumber);
+                console.log(`\n✅ APKA PAIRING CODE YAHAN HY: ${code}\n`);
+            }, 5000);
         }
     });
 
@@ -48,4 +47,5 @@ async function startBot() {
 }
 
 startBot();
+
 
